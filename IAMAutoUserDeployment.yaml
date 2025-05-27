@@ -1,4 +1,4 @@
-template-file-path: aws-user-set-template-2025
+template-file-path: aws-user-set-template-2025.yaml
 parameters:
   S3UserName: s3-user
   EC2UserName: ec2-user

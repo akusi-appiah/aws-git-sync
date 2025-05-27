@@ -1,0 +1,6 @@
+template-file-path: aws-user-set-template-2025
+parameters:
+  S3UserName: s3-user
+  EC2UserName: ec2-user
+  EmailDomain: example.com
+tags: {}

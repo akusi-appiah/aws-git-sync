@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  IAM User setup with OTP from Secrets Manager, email logging via SSM, Python 3.12 Lambda and EventBridge trigger.
+
+Parameters:
+  S3UserName:
+    Type: String
+    Default: s3-user
+
+  EC2UserName:
+    Type: String
+    Default: ec2-user
+
+  EmailDomain:
+    Type: String
+    Default: example.com
+
+Resources:
+  OTPSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: OTPSecret
+      Description: Temporary password for IAM users
+      SecretString: '{"password":"TempPass123!"}'
+
+  S3UserGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: S3UserGroup
+      Policies:
+        - PolicyName: S3ReadOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:Get*
+                  - s3:List*
+                Resource: "*"
+
+  EC2UserGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: EC2UserGroup
+      Policies:
+        - PolicyName: EC2ReadOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:Describe*
+                Resource: "*"
+
+  S3User:
+    Type: AWS::IAM::User
+    DependsOn: UserCreationEventRule
+    Properties:
+      UserName: !Ref S3UserName
+      Groups: [!Ref S3UserGroup]
+      LoginProfile:
+        Password: !Sub "{{resolve:secretsmanager:OTPSecret:SecretString:password}}"
+        PasswordResetRequired: true
+
+  EC2User:
+    Type: AWS::IAM::User
+    DependsOn: UserCreationEventRule
+    Properties:
+      UserName: !Ref EC2UserName
+      Groups: [!Ref EC2UserGroup]
+      LoginProfile:
+        Password: !Sub "{{resolve:secretsmanager:OTPSecret:SecretString:password}}"
+        PasswordResetRequired: true
+
+  S3UserEmail:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/user/email/${S3UserName}"
+      Type: String
+      Value: !Sub "${S3UserName}@${EmailDomain}"
+
+  EC2UserEmail:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/user/email/${EC2UserName}"
+      Type: String
+      Value: !Sub "${EC2UserName}@${EmailDomain}"
+
+  LogNewUserLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LogNewUserLambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaLogAccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:PutParameter
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
+
+  LogNewUserLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LogNewUserDetailsPython
+      Handler: index.handler
+      Runtime: python3.12
+      Role: !GetAtt LogNewUserLambdaRole.Arn
+      Timeout: 10
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import logging
+
+          ssm = boto3.client('ssm')
+          secrets = boto3.client('secretsmanager')
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info("Received event: %s", json.dumps(event))
+
+              user = event.get("detail", {}).get("requestParameters", {}).get("userName", "unknown")
+              param_name = f"/user/email/{user}"
+              default_email = f"{user}@example.com"
+
+              try:
+                  email = ssm.get_parameter(Name=param_name)['Parameter']['Value']
+              except ssm.exceptions.ParameterNotFound:
+                  ssm.put_parameter(Name=param_name, Type='String', Value=default_email)
+                  email = default_email
+                  logger.info(f"Created email parameter: {param_name}")
+              except Exception as e:
+                  logger.error(f"SSM error: {str(e)}")
+                  return
+
+              try:
+                  secret = secrets.get_secret_value(SecretId='OTPSecret')
+                  password = json.loads(secret['SecretString']).get('password', 'N/A')
+              except Exception as e:
+                  logger.error(f"Secrets Manager error: {str(e)}")
+                  password = 'N/A'
+
+              logger.info(f"User: {user}, Email: {email}, OTP: {password}")
+
+  UserCreationEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: IAMUserCreateTriggerPython
+      EventPattern:
+        source:
+          - aws.iam
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventName:
+            - CreateUser
+      Targets:
+        - Arn: !GetAtt LogNewUserLambda.Arn
+          Id: LambdaTargetPythonIAMCreate
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LogNewUserLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt UserCreationEventRule.Arn
+
+Outputs:
+  UsersCreated:
+    Description: IAM users created
+    Value: !Join [", ", [!Ref S3UserName, !Ref EC2UserName]]
+
+  OTPSecretName:
+    Description: Name of OTP Secret
+    Value: !Ref OTPSecret
+
+  LambdaFunction:
+    Description: Logging Lambda function name
+    Value: !Ref LogNewUserLambda

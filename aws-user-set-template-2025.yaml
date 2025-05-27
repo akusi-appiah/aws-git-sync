@@ -38,19 +38,6 @@ Resources:
                   - s3:List*
                 Resource: "*"
 
-  EC2User1Group:
-    Type: AWS::IAM::Group
-    Properties:
-      GroupName: EC2UserGroupOne
-      Policies:
-        - PolicyName: EC21ReadOnly
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ec2:Describe*
-                Resource: "*"
 
   EC2UserGroup:
     Type: AWS::IAM::Group

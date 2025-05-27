@@ -27,31 +27,40 @@ Resources:
     Type: AWS::IAM::Group
     Properties:
       GroupName: S3UserGroup
-      Policies:
-        - PolicyName: S3ReadOnly
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:Get*
-                  - s3:List*
-                Resource: "*"
-
-
+      
   EC2UserGroup:
     Type: AWS::IAM::Group
     Properties:
       GroupName: EC2UserGroup
-      Policies:
-        - PolicyName: EC2ReadOnly
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ec2:Describe*
-                Resource: "*"
+
+  # Phase 2b: Managed Policies attached to Groups
+  S3GroupPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3ReadOnlyAccess
+      Groups: [!Ref S3UserGroup]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:Get*
+              - s3:List*
+            Resource: '*'
+
+  EC2GroupPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EC2ReadOnlyAccess
+      Groups: [!Ref EC2UserGroup]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:Describe*
+            Resource: '*'
+ 
 
   S3User:
     Type: AWS::IAM::User

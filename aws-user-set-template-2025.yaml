@@ -23,6 +23,25 @@ Resources:
       Description: Temporary password for IAM users
       SecretString: '{"password":"TempPass123!"}'
 
+  S3ManagerGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: S3ManagerGroup
+      Policies:
+        - PolicyName: S3Managers
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:Get*
+                  - s3:List*
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                Resource: "*"
+
   S3UserGroup:
     Type: AWS::IAM::Group
     Properties:

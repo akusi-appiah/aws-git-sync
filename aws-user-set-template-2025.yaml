@@ -23,6 +23,12 @@ Resources:
       Description: Temporary password for IAM users
       SecretString: '{"password":"TempPass123!"}'
 
+
+  S3UManagerGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: S3ManagerGroup
+
   S3UserGroup:
     Type: AWS::IAM::Group
     Properties:
